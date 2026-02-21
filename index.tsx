@@ -5,6 +5,7 @@
  * - Clientside only
  * - Auto-resets if the user changes their real avatar
  * - Safe: caches settings, debounces DOM scanning, shrinks stored images
+ * Copyright (c) 2026 loadstr0
  */
 
 import { definePluginSettings } from "@api/Settings";
@@ -14,9 +15,7 @@ import { Menu, Toasts, UserStore } from "@webpack/common";
 import type { User } from "@vencord/discord-types";
 
 type OverrideEntry = {
-    // avatar hash at time of setting; if user's hash changes, remove override
     avatarHash: string | null;
-    // small, compressed data url
     dataUrl: string;
 };
 
@@ -69,9 +68,6 @@ function safeParseOverrides(raw: string): OverridesMap {
 }
 
 function parseAvatarCdn(src: string): { userId: string; hash: string } | null {
-    // Matches:
-    // https://cdn.discordapp.com/avatars/{uid}/{hash}.png?size=...
-    // https://media.discordapp.net/avatars/{uid}/{hash}.webp?size=...
     const m = src.match(
         /https:\/\/(?:cdn\.discordapp\.com|media\.discordapp\.net)\/avatars\/(\d+)\/([^/?#.]+)\./
     );
@@ -84,8 +80,6 @@ async function fileToCompressedDataUrl(
     maxSizePx: number,
     quality: number
 ): Promise<string> {
-    // Hard guard: don’t accept giant files (prevents freeze)
-    // 5MB is plenty for an avatar input; we downscale anyway.
     const MAX_BYTES = 5 * 1024 * 1024;
     if (file.size > MAX_BYTES) {
         throw new Error("That file is too large. Pick a smaller image (<= 5MB).");
@@ -119,7 +113,6 @@ async function fileToCompressedDataUrl(
 
         ctx.drawImage(img, 0, 0, tw, th);
 
-        // JPEG is smaller/safer than PNG for photos; good enough for pfps
         const q = clamp(quality, 0.1, 1);
         return canvas.toDataURL("image/jpeg", q);
     } finally {
@@ -149,10 +142,9 @@ export default definePlugin({
     name: "AvatarReplacer",
     description:
         "Clientside avatar overrides per-user. Right click -> Change profile picture. Auto-resets when the user changes their real avatar.",
-    authors: [{ name: "you" }],
+    authors: [{ id: 1117568708399861790, name: "loadstr" }],
     settings,
 
-    // We patch multiple context menus so it works in the places you requested.
     contextMenus: {
         "user-context": (children, props) => {
             const user = (props as any)?.user as User | undefined;
@@ -160,7 +152,6 @@ export default definePlugin({
             children.push(makeMenuItemsForUser(user));
         },
 
-        // Full profile UI (actions row / overflow menu)
         "user-profile-actions": (children, props) => {
             const user = (props as any)?.user as User | undefined;
             if (!user) return;
@@ -175,7 +166,6 @@ export default definePlugin({
     } satisfies Record<string, NavContextMenuPatchCallback>,
 
     start() {
-        // Cache overrides in memory (NO constant JSON.parse)
         let overrides: OverridesMap = safeParseOverrides(settings.store.overridesJson);
 
         const syncFromStore = () => {
@@ -187,12 +177,10 @@ export default definePlugin({
             settings.store.overridesJson = JSON.stringify(next);
         };
 
-        // Expose helpers to menu builder
         (this as any)._arGetOverrides = () => overrides;
         (this as any)._arSyncFromStore = syncFromStore;
         (this as any)._arWriteToStore = writeToStore;
 
-        // Restore originals on stop / override removal
         const originals = new WeakMap<HTMLImageElement, { src: string; srcset: string | null }>();
 
         const restore = (img: HTMLImageElement) => {
@@ -204,7 +192,6 @@ export default definePlugin({
             originals.delete(img);
         };
 
-        // Debounced scanning (one per animation frame)
         let scheduled = false;
         const queueScan = () => {
             if (scheduled) return;
@@ -219,7 +206,6 @@ export default definePlugin({
             const srcAttr = img.getAttribute("src") ?? "";
             if (!srcAttr) return;
 
-            // Only look at avatar URLs (huge perf win)
             if (!srcAttr.includes("/avatars/")) {
                 restore(img);
                 return;
@@ -237,7 +223,6 @@ export default definePlugin({
                 return;
             }
 
-            // If user changed their real avatar hash -> remove override
             if (entry.avatarHash && entry.avatarHash !== parsed.hash) {
                 const next = { ...overrides };
                 delete next[parsed.userId];
@@ -246,7 +231,6 @@ export default definePlugin({
                 return;
             }
 
-            // Apply override
             if (!originals.has(img)) {
                 originals.set(img, { src: img.src, srcset: img.getAttribute("srcset") });
             }
@@ -258,13 +242,11 @@ export default definePlugin({
         };
 
         const scanAndApply = () => {
-            // Only select images that might be avatars
             document.querySelectorAll("img[src*='/avatars/']").forEach(n => {
                 if (n instanceof HTMLImageElement) applyToImg(n);
             });
         };
 
-        // Initial scan
         queueScan();
 
         const obs = new MutationObserver(muts => {
@@ -288,7 +270,6 @@ export default definePlugin({
 
         (this as any)._stop = () => {
             obs.disconnect();
-            // restore any still in DOM
             document.querySelectorAll("img").forEach(n => {
                 if (n instanceof HTMLImageElement) restore(n);
             });
@@ -305,14 +286,12 @@ export default definePlugin({
 
 function makeMenuItemsForUser(user: User) {
     const pluginAny = (globalThis as any).Vencord?.Plugins?.plugins?.AvatarReplacer;
-    // Fallback if plugin reference isn’t available in this build style
     const getOverrides: (() => OverridesMap) | undefined = pluginAny?._arGetOverrides;
     const writeToStore: ((m: OverridesMap) => void) | undefined = pluginAny?._arWriteToStore;
 
     const currentUser = UserStore.getCurrentUser?.();
     const isSelf = currentUser && user.id === currentUser.id;
 
-    // In case we can’t access plugin instance, just don’t render
     if (!getOverrides || !writeToStore) return null;
 
     const overrides = getOverrides();
@@ -325,7 +304,6 @@ function makeMenuItemsForUser(user: User) {
                 label="Change profile picture"
                 disabled={!!isSelf}
                 action={() => {
-                    // Let the context menu close before opening the picker (less jank)
                     setTimeout(async () => {
                         try {
                             const file = await pickImageFile();
@@ -374,4 +352,5 @@ function makeMenuItemsForUser(user: User) {
             )}
         </>
     );
+
 }
