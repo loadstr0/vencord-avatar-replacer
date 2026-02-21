@@ -31,7 +31,7 @@ Check out this guide to get started:
 https://docs.vencord.dev/installing/custom-plugins/
 
 ## Installation (PowerShell)
-Open PowerShell in your Vencord repo folder and run:
+Open PowerShell in your Vencord repo folder (C:\Users\User\Documents\Vencord) and run:
 
 ```powershell
 cd src/userplugins
