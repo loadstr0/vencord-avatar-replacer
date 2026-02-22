@@ -137,7 +137,7 @@ export default definePlugin({
     name: "AvatarReplacer",
     description:
         "Clientside avatar overrides per-user. Right click -> Change profile picture. Auto-resets when the user changes their real avatar.",
-    authors: [{ id: 1117568708399861790, name: "loadstr" }],
+    authors: [{ id: 1117568708399861790n, name: "loadstr" }],
     settings,
 
     contextMenus: {
